@@ -38,7 +38,7 @@ public class InputParser {
             String id = readLine(sc, "Name (e.g. P" + i + "): ");
             int arrival = readInt(sc, "Arrival time: ", 0);
             int burst = readInt(sc, "Burst time: ", 1);
-            int priority = readInt(sc, "Initial priority (lower number = higher priority): ", 0);
+            int priority = readInt(sc, "Initial priority (lower number = higher priority): ", 1);
             list.add(new Process(id, arrival, burst, priority));
         }
         validateProcesses(list);
@@ -56,7 +56,7 @@ public class InputParser {
             if (!ids.add(p.getId())) throw new IllegalArgumentException("Duplicate process name: " + p.getId());
             if (p.getArrivalTime() < 0) throw new IllegalArgumentException(p.getId() + ": arrival must be >= 0");
             if (p.getBurstTime() <= 0) throw new IllegalArgumentException(p.getId() + ": burst must be > 0");
-            if (p.getInitialPriority() < 0) throw new IllegalArgumentException(p.getId() + ": priority must be >= 0");
+            if (p.getInitialPriority() < 0) throw new IllegalArgumentException(p.getId() + ": priority must be >= 1");
         }
     }
 
@@ -67,7 +67,7 @@ public class InputParser {
             System.out.print(prompt);
             String s = sc.nextLine().trim();
             if (!s.isEmpty()) return s;
-            System.out.println("Please type something.");
+            System.out.println("Please type something");
         }
     }
 
@@ -78,9 +78,9 @@ public class InputParser {
             try {
                 int v = Integer.parseInt(s);
                 if (v >= min) return v;
-                System.out.println("Value must be >= " + min + ".");
+                System.out.println("Value must be >= " + min );
             } catch (NumberFormatException e) {
-                System.out.println("Please enter a whole number.");
+                System.out.println("Please enter a whole number");
             }
         }
     }
