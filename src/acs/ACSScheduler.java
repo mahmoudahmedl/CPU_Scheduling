@@ -94,3 +94,141 @@ public class ACSScheduler implements Scheduler {
                     admitArrivals(now);
                     demote(selected);
                 }
+            } else {
+                runTier2Burst(selected);
+                finished++;
+            }
+            lastProcess = selected;
+        }
+
+        result.metrics = MetricsCalculator.compute(all, result.gantt);
+        return result;
+    }
+
+    /** Admit every not-yet-admitted process whose arrival time has passed. */
+    private void admitArrivals(int time) {
+        for (Process p : all) {
+            if (p.getTier() == Tier.NONE
+                    && p.getRemainingTime() > 0
+                    && p.getArrivalTime() <= time) {
+                p.setTier(Tier.TIER1);
+                tier1.enqueue(p);
+            }
+        }
+    }
+
+    /** Tier 1 always has priority over Tier 2. */
+    private Process selectNext() {
+        if (!tier1.isEmpty()) {
+            return tier1.dequeue();
+        }
+        if (tier2.isEmpty()) {
+            return null;
+        }
+        updateAging();
+        tier2.sort(Comparator
+                .comparingInt(Process::getCurrentPriority)
+                .thenComparingInt(Process::getWaitStartTime)
+                .thenComparing(Process::getId));
+        return tier2.get(0);
+    }
+
+    private SliceOutcome runTier1Slice(Process p) {
+        recordSnapshot(p, "Tier 1 Round Robin");
+        if (!p.hasStarted()) {
+            p.setStartTime(now);
+        }
+
+        int used = Math.min(quantum, p.getRemainingTime());
+        int start = now;
+        p.execute(used);
+        now += used;
+        addSlice(SliceType.RUN, p.getId(), start, now);
+
+        if (p.isFinished()) {
+            p.setFinishTime(now);
+            p.setTier(Tier.NONE);
+            return SliceOutcome.FINISHED;
+        }
+
+        return used == quantum ? SliceOutcome.DEMOTED : SliceOutcome.FINISHED;
+    }
+
+    /** Tier 2 is non-preemptive: once selected, run until completion. */
+    private void runTier2Burst(Process p) {
+        recordSnapshot(p, "Tier 2 non-preemptive priority");
+        if (!p.hasStarted()) {
+            p.setStartTime(now);
+        }
+
+        int start = now;
+        int duration = p.getRemainingTime();
+        p.execute(duration);
+        now += duration;
+        addSlice(SliceType.RUN, p.getId(), start, now);
+        p.setFinishTime(now);
+        p.setTier(Tier.NONE);
+        tier2.remove(p);
+    }
+
+    private void demote(Process p) {
+        p.setTier(Tier.TIER2);
+        p.setBatch(true);
+        p.setWaitStartTime(now);
+        p.setCurrentPriority(p.getInitialPriority());
+        tier2.add(p);
+    }
+
+    private void updateAging() {
+        for (Process p : tier2) {
+            int waited = Math.max(0, now - p.getWaitStartTime());
+            int improvement = waited / agingInterval;
+            // Smaller numeric priority means higher priority; keep it >= 1.
+            p.setCurrentPriority(Math.max(1, p.getInitialPriority() - improvement));
+        }
+    }
+
+    private int nextArrivalTime() {
+        int next = Integer.MAX_VALUE;
+        for (Process p : all) {
+            if (p.getTier() == Tier.NONE && p.getRemainingTime() > 0
+                    && p.getArrivalTime() > now) {
+                next = Math.min(next, p.getArrivalTime());
+            }
+        }
+        return next;
+    }
+
+    private void recordSnapshot(Process running, String note) {
+        List<ProcessView> t1 = tier1.snapshotView();
+        List<ProcessView> t2 = new ArrayList<>();
+        updateAging();
+        tier2.sort(Comparator
+                .comparingInt(Process::getCurrentPriority)
+                .thenComparingInt(Process::getWaitStartTime)
+                .thenComparing(Process::getId));
+        for (Process p : tier2) {
+            t2.add(ProcessView.of(p));
+        }
+        List<String> notes = new ArrayList<>();
+        notes.add(note);
+        result.snapshots.add(new TimeStepSnapshot(now, running.getId(), t1, t2, notes));
+    }
+
+    private void addSlice(SliceType type, String id, int start, int end) {
+        if (end <= start) {
+            return;
+        }
+        if (type == SliceType.RUN && !result.gantt.isEmpty()) {
+            TimeSlice previous = result.gantt.get(result.gantt.size() - 1);
+            if (previous.type == SliceType.RUN
+                    && previous.processId != null
+                    && previous.processId.equals(id)
+                    && previous.end == start) {
+                previous.end = end;
+                return;
+            }
+        }
+        result.gantt.add(new TimeSlice(type, id, start, end));
+    }
+}
