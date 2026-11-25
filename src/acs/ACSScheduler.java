@@ -5,28 +5,24 @@ import model.Process;
 import util.MetricsCalculator;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * Adaptive Container Scheduler.
  *
- * Tier 1 is Round Robin. A process that consumes a complete quantum and still
- * has work remaining is demoted to Tier 2. Tier 2 is non-preemptive priority.
- *
- * NOTE: Tier 2 and aging are implemented privately here as an integration
- * fallback because Member 4's Tier2Queue/AgingPolicy classes are not present
- * in this project ZIP yet. They can be extracted/replaced when Member 4
- * delivers those files; no existing project file needs to be changed.
+ * Tier 1: Round Robin (Tier1Queue). A process that uses a full quantum and
+ *         still has work left is demoted (DemotionPolicy) to Tier 2.
+ * Tier 2: Non-preemptive priority (Tier2Queue).
+ * Tier 3: Aging (AgingPolicy) - the longer a process waits in Tier 2,
+ *         the better (smaller) its priority number becomes.
  */
 public class ACSScheduler implements Scheduler {
 
     private Tier1Queue tier1;
-    private final List<Process> tier2 = new ArrayList<>();
+    private Tier2Queue tier2;
     private List<Process> all;
     private SimulationResult result;
     private int quantum;
-    private int agingInterval;
     private int now;
     private Process lastProcess;
 
@@ -44,8 +40,9 @@ public class ACSScheduler implements Scheduler {
             throw new IllegalArgumentException("Time quantum must be greater than zero.");
         }
 
+        int agingInterval = cfg.agingInterval > 0 ? cfg.agingInterval : 4;
         tier1 = new Tier1Queue();
-        tier2.clear();
+        tier2 = new Tier2Queue(new AgingPolicy(agingInterval));
         all = cfg.deepCopyProcesses();
         result = new SimulationResult();
         result.schedulerName = getName();
@@ -54,7 +51,6 @@ public class ACSScheduler implements Scheduler {
         result.gantt = new ArrayList<>();
         result.snapshots = new ArrayList<>();
         quantum = cfg.quantum;
-        agingInterval = cfg.agingInterval > 0 ? cfg.agingInterval : 4;
         now = 0;
         lastProcess = null;
 
@@ -89,10 +85,10 @@ public class ACSScheduler implements Scheduler {
                 if (outcome == SliceOutcome.FINISHED) {
                     finished++;
                 } else {
-                    // Arrivals at this exact time are admitted before the
+                    // Arrivals at this exact time enter Tier 1 before the
                     // just-demoted process enters Tier 2.
                     admitArrivals(now);
-                    demote(selected);
+                    DemotionPolicy.demote(selected, now, tier2);
                 }
             } else {
                 runTier2Burst(selected);
@@ -122,15 +118,8 @@ public class ACSScheduler implements Scheduler {
         if (!tier1.isEmpty()) {
             return tier1.dequeue();
         }
-        if (tier2.isEmpty()) {
-            return null;
-        }
-        updateAging();
-        tier2.sort(Comparator
-                .comparingInt(Process::getCurrentPriority)
-                .thenComparingInt(Process::getWaitStartTime)
-                .thenComparing(Process::getId));
-        return tier2.get(0);
+        // Tier2Queue applies aging, picks the best priority and removes it.
+        return tier2.pickNext(now);
     }
 
     private SliceOutcome runTier1Slice(Process p) {
@@ -151,7 +140,9 @@ public class ACSScheduler implements Scheduler {
             return SliceOutcome.FINISHED;
         }
 
-        return used == quantum ? SliceOutcome.DEMOTED : SliceOutcome.FINISHED;
+        return DemotionPolicy.shouldDemote(p, used, quantum)
+                ? SliceOutcome.DEMOTED
+                : SliceOutcome.FINISHED;
     }
 
     /** Tier 2 is non-preemptive: once selected, run until completion. */
@@ -168,24 +159,6 @@ public class ACSScheduler implements Scheduler {
         addSlice(SliceType.RUN, p.getId(), start, now);
         p.setFinishTime(now);
         p.setTier(Tier.NONE);
-        tier2.remove(p);
-    }
-
-    private void demote(Process p) {
-        p.setTier(Tier.TIER2);
-        p.setBatch(true);
-        p.setWaitStartTime(now);
-        p.setCurrentPriority(p.getInitialPriority());
-        tier2.add(p);
-    }
-
-    private void updateAging() {
-        for (Process p : tier2) {
-            int waited = Math.max(0, now - p.getWaitStartTime());
-            int improvement = waited / agingInterval;
-            // Smaller numeric priority means higher priority; keep it >= 1.
-            p.setCurrentPriority(Math.max(1, p.getInitialPriority() - improvement));
-        }
     }
 
     private int nextArrivalTime() {
@@ -199,17 +172,24 @@ public class ACSScheduler implements Scheduler {
         return next;
     }
 
+    /**
+     * The running process was already removed from its queue, so it is put
+     * back at the front of its tier's view (it has the best priority anyway).
+     */
     private void recordSnapshot(Process running, String note) {
-        List<ProcessView> t1 = tier1.snapshotView();
+        List<ProcessView> t1 = new ArrayList<>();
         List<ProcessView> t2 = new ArrayList<>();
-        updateAging();
-        tier2.sort(Comparator
-                .comparingInt(Process::getCurrentPriority)
-                .thenComparingInt(Process::getWaitStartTime)
-                .thenComparing(Process::getId));
-        for (Process p : tier2) {
-            t2.add(ProcessView.of(p));
+
+        if (running.getTier() == Tier.TIER1) {
+            t1.add(ProcessView.of(running));
         }
+        t1.addAll(tier1.snapshotView());
+
+        if (running.getTier() == Tier.TIER2) {
+            t2.add(ProcessView.of(running));
+        }
+        t2.addAll(tier2.snapshotView(now));
+
         List<String> notes = new ArrayList<>();
         notes.add(note);
         result.snapshots.add(new TimeStepSnapshot(now, running.getId(), t1, t2, notes));
