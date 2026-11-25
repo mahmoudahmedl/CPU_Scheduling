@@ -2,7 +2,6 @@ package gui;
 
 import io.OutputFormatter;
 import model.*;
-import model.Process;
 import util.SchedulerFactory;
 
 import javax.swing.*;

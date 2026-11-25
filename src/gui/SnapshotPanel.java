@@ -19,6 +19,7 @@ public class SnapshotPanel extends JPanel {
 
     private List<TimeStepSnapshot> snapshots = new ArrayList<>();
     private int index = 0;
+    private boolean sjfMode = false;
 
     private final JLabel header = new JLabel(" ");
     private final JTextArea body = new JTextArea();
@@ -45,6 +46,11 @@ public class SnapshotPanel extends JPanel {
         prev.addActionListener(e -> go(index - 1));
         next.addActionListener(e -> go(index + 1));
 
+        refresh();
+    }
+
+    public void setSJFMode(boolean sjf) {
+        this.sjfMode = sjf;
         refresh();
     }
 
@@ -77,8 +83,12 @@ public class SnapshotPanel extends JPanel {
                        + (s.runningProcessId == null ? "-" : s.runningProcessId));
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Tier 1: ").append(format(s.tier1)).append("\n");
-        sb.append("Tier 2: ").append(format(s.tier2)).append("\n");
+        if (sjfMode) {
+            sb.append("Ready queue: ").append(format(s.tier1)).append("\n");
+        } else {
+            sb.append("Tier 1: ").append(format(s.tier1)).append("\n");
+            sb.append("Tier 2: ").append(format(s.tier2)).append("\n");
+        }
         if (s.notes != null && !s.notes.isEmpty()) {
             sb.append("\n");
             for (String n : s.notes) {

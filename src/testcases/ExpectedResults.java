@@ -45,4 +45,22 @@ public class ExpectedResults {
         }
         return m;
     }
+    public static Map<String, int[]> expectedACS(int caseNo) {
+    Map<String, int[]> m = new LinkedHashMap<>();
+    switch (caseNo) {
+        case 1: 
+            m.put("P1", new int[]{ 9, 9,5 });
+            m.put("P2", new int[]{ 13, 12, 5 });
+            m.put("P3", new int[]{ 8, 5, 3 });
+            break;
+        case 2: 
+            m.put("P1", new int[]{ 18, 18, 13 });
+            m.put("P2", new int[]{ 15, 14, 8 });
+            m.put("P3", new int[]{ 20, 16, 12 });
+            break;
+        default:
+            throw new IllegalArgumentException("Unknown ACS test case: " + caseNo);
+    }
+    return m;
+} 
 }
