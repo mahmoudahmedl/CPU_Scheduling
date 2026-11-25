@@ -56,7 +56,7 @@ public class InputParser {
             if (!ids.add(p.getId())) throw new IllegalArgumentException("Duplicate process name: " + p.getId());
             if (p.getArrivalTime() < 0) throw new IllegalArgumentException(p.getId() + ": arrival must be >= 0");
             if (p.getBurstTime() <= 0) throw new IllegalArgumentException(p.getId() + ": burst must be > 0");
-            if (p.getInitialPriority() < 0) throw new IllegalArgumentException(p.getId() + ": priority must be >= 1");
+            if (p.getInitialPriority() < 1) throw new IllegalArgumentException(p.getId() + ": priority must be >= 1");
         }
     }
 

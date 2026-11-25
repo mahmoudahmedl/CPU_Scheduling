@@ -25,6 +25,7 @@ public class ACSScheduler implements Scheduler {
     private int quantum;
     private int now;
     private Process lastProcess;
+    private List<Process> byArrival;
 
     @Override
     public String getName() {
@@ -44,6 +45,8 @@ public class ACSScheduler implements Scheduler {
         tier1 = new Tier1Queue();
         tier2 = new Tier2Queue(new AgingPolicy(agingInterval));
         all = cfg.deepCopyProcesses();
+        byArrival = new ArrayList<>(all);
+        byArrival.sort(java.util.Comparator.comparingInt(Process::getArrivalTime));
         result = new SimulationResult();
         result.schedulerName = getName();
         result.config = cfg;
@@ -103,15 +106,15 @@ public class ACSScheduler implements Scheduler {
 
     /** Admit every not-yet-admitted process whose arrival time has passed. */
     private void admitArrivals(int time) {
-        for (Process p : all) {
-            if (p.getTier() == Tier.NONE
-                    && p.getRemainingTime() > 0
-                    && p.getArrivalTime() <= time) {
-                p.setTier(Tier.TIER1);
-                tier1.enqueue(p);
-            }
+    for (Process p : byArrival) {
+        if (p.getTier() == Tier.NONE
+                && p.getRemainingTime() > 0
+                && p.getArrivalTime() <= time) {
+            p.setTier(Tier.TIER1);
+            tier1.enqueue(p);
         }
     }
+}
 
     /** Tier 1 always has priority over Tier 2. */
     private Process selectNext() {
