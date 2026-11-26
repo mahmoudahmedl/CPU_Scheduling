@@ -1,0 +1,5 @@
+# Test Case 1 from the assignment PDF  ->  use Q = 3, CS = 0
+# id arrival burst priority
+P1 0 4 2
+P2 1 7 3
+P3 3 2 1
